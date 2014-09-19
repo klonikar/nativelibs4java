@@ -7,6 +7,10 @@ import static org.junit.Assert.assertEquals;
 import org.bridj.*;
 import static org.bridj.Pointer.*;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import java.nio.FloatBuffer;
 
 import org.junit.BeforeClass;
@@ -25,7 +29,13 @@ public class OpenCL4JavaBasicTest {
         try {
 			CLContext context = createBestContext();
 			
-            int dataSize = 10000;
+            int dataSize = 100000;
+			String dataSizeStr = System.getProperty("dataSize", Integer.toString(dataSize));
+			if(dataSizeStr != null && !dataSizeStr.isEmpty()) {
+				try {
+					dataSize = Integer.parseInt(dataSizeStr);
+				} catch(Exception ex) {}
+			}
 			String src = "\n" +
                     "__kernel void aSinB(                                                   \n" +
                     "   __global const float* a,                                       \n" +
@@ -36,6 +46,7 @@ public class OpenCL4JavaBasicTest {
                     "   output[i] = a[i] * sin(b[i]) + 1;                              \n" +
                     "}                                                                 \n";
 
+			//System.out.println("Kernel function: " +  src);
             CLProgram program = context.createProgram(src).build();
 			CLKernel kernel = program.createKernel("aSinB");
             CLQueue queue = context.createDefaultQueue();
@@ -51,6 +62,7 @@ public class OpenCL4JavaBasicTest {
 
             // Allocate OpenCL-hosted memory for inputs and output, 
             // with inputs initialized as copies of the NIO buffers
+			long t1_g = System.currentTimeMillis();
             CLBuffer<Float> memIn1 = context.createBuffer(CLMem.Usage.Input, a, true); // 'true' : copy provided data
             CLBuffer<Float> memIn2 = context.createBuffer(CLMem.Usage.Input, b, true);
             CLBuffer<Float> memOut = context.createBuffer(CLMem.Usage.Output, Float.class, dataSize);
@@ -67,13 +79,30 @@ public class OpenCL4JavaBasicTest {
 
             // Copy the OpenCL-hosted array back to RAM
             Pointer<Float> output = memOut.read(queue);
+			long t2_g = System.currentTimeMillis();
 
+			int numProcessors = Runtime.getRuntime().availableProcessors();
+			int chunkSize = dataSize/numProcessors;
+			System.out.println("number of processors/cores: " + numProcessors + ", CPU chunkSize: " + chunkSize);
+			long t1 = System.currentTimeMillis();
+			ExecutorService taskExecutor = Executors.newFixedThreadPool(numProcessors);
+			MyRunnable[] tasks = new MyRunnable[numProcessors];
+			for(int i = 0;i < numProcessors;i++) {
+				MyRunnable task = new MyRunnable(i*chunkSize, (i+1)*chunkSize);
+				tasks[i] = task;
+				taskExecutor.execute(task);
+			}
+			taskExecutor.shutdown();
+			try {
+				taskExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+			} catch(Exception ex) { }
+			long t2 = System.currentTimeMillis();
+			System.out.println("gpu time diff: " + (t2_g-t1_g) + " ms, cpu time diff: " + (t2-t1) + " ms");
             // Compute absolute and relative average errors wrt Java implem
             double totalAbsoluteError = 0, totalRelativeError = 0;
-            for (int i = 0; i < dataSize; i++) {
-                float expected = i * (float) Math.sin(i) + 1;
+			for(int i = 0;i < dataSize;i++) {
+				float expected = tasks[i/chunkSize].expectedResults[i % chunkSize];
                 float result = output.get(i);
-
                 double d = result - expected;
                 if (expected != 0) {
                     totalRelativeError += d / expected;
@@ -93,4 +122,23 @@ public class OpenCL4JavaBasicTest {
             ex.printStackTrace();
         }
     }
+	
+	private static class MyRunnable implements Runnable {
+		private int start;
+		private int end;
+		public float[] expectedResults;
+
+		public MyRunnable(int start, int end) {
+			this.start = start;
+			this.end = end;
+			int dataSize = end - start + 1;
+			expectedResults = new float[dataSize];
+		}
+		
+		public void run() {
+			for (int i = start; i < end; i++) {
+                expectedResults[i-start] = i * (float) Math.sin(i) + 1;
+			}
+		}
+	}
 }
