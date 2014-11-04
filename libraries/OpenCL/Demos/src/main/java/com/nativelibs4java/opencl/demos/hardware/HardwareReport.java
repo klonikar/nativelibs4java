@@ -219,6 +219,16 @@ public class HardwareReport {
         return ret;
     }
     public static void main(String[] args) {
+		if(args.length >= 1 && args[0].equalsIgnoreCase("--html")) {
+			String html = "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n";
+            for (CLPlatform platform : JavaCL.listPlatforms()) {
+				List<Map<String, Object>> list = listInfos(platform);
+				html += toTable(list);
+			}
+			html += "</body></html>";
+			System.out.println(html);
+			return;
+		}
         try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch(Exception ex) {}
         SetupUtils.failWithDownloadProposalsIfOpenCLNotAvailable();
 
