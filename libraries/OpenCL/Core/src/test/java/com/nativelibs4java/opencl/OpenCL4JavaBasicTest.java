@@ -29,26 +29,30 @@ public class OpenCL4JavaBasicTest {
 		private int start;
 		private int end;
 		public float[] expectedResults;
+		float[] aVals;
+		float[] bVals;
 		public int chunkSize;
 
-		public MyRunnable(int start, int end) {
+		public MyRunnable(int start, int end, float[] aVals, float[] bVals) {
 			this.start = start;
 			this.end = end;
 			this.chunkSize = end - start;
 			int dataSize = end - start + 1;
+			this.aVals = aVals;
+			this.bVals = bVals;
 			expectedResults = new float[dataSize];
 		}
 		
 		public void run() {
 			for (int i = start; i < end; i++) {
-				float a = i;
-				float b = i;
+				float a = aVals[i];
+				float b = bVals[i];
                 expectedResults[i-start] = (float) Math.sin(Math.exp(Math.cos(Math.sin(a) * Math.sin(b) + 1)));
 			}
 		}
 	}
 
-    private static MyRunnable[] executeOnHost(int dataSize) {
+    private static MyRunnable[] executeOnHost(int dataSize, float[] aVals, float[] bVals) {
 		int numProcessors = Runtime.getRuntime().availableProcessors();
 		int chunkSize = dataSize/numProcessors;
 		System.out.println("number of processors/cores: " + numProcessors + ", CPU chunkSize: " + chunkSize);
@@ -56,7 +60,7 @@ public class OpenCL4JavaBasicTest {
 		ExecutorService taskExecutor = Executors.newFixedThreadPool(numProcessors);
 		MyRunnable[] tasks = new MyRunnable[numProcessors];
 		for(int i = 0;i < numProcessors;i++) {
-			MyRunnable task = new MyRunnable(i*chunkSize, (i+1)*chunkSize);
+			MyRunnable task = new MyRunnable(i*chunkSize, (i+1)*chunkSize, aVals, bVals);
 			tasks[i] = task;
 			taskExecutor.execute(task);
 		}
@@ -73,26 +77,30 @@ public class OpenCL4JavaBasicTest {
 		private int start;
 		private int end;
 		public double[] expectedResults;
+		double[] aVals;
+		double[] bVals;
 		public int chunkSize;
 
-		public MyRunnableDouble(int start, int end) {
+		public MyRunnableDouble(int start, int end, double[] aVals, double[] bVals) {
 			this.start = start;
 			this.end = end;
 			this.chunkSize = end - start;
 			int dataSize = end - start + 1;
+			this.aVals = aVals;
+			this.bVals = bVals;
 			expectedResults = new double[dataSize];
 		}
 		
 		public void run() {
 			for (int i = start; i < end; i++) {
-				float a = i;
-				float b = i;
+				double a = aVals[i];
+				double b = bVals[i];
                 expectedResults[i-start] = Math.sin(Math.exp(Math.cos(Math.sin(a) * Math.sin(b) + 1)));
 			}
 		}
 	}
 
-    private static MyRunnableDouble[] executeOnHostDouble(int dataSize) {
+    private static MyRunnableDouble[] executeOnHostDouble(int dataSize, double[] aVals, double[] bVals) {
 		int numProcessors = Runtime.getRuntime().availableProcessors();
 		int chunkSize = dataSize/numProcessors;
 		System.out.println("number of processors/cores: " + numProcessors + ", CPU chunkSize: " + chunkSize);
@@ -100,7 +108,7 @@ public class OpenCL4JavaBasicTest {
 		ExecutorService taskExecutor = Executors.newFixedThreadPool(numProcessors);
 		MyRunnableDouble[] tasks = new MyRunnableDouble[numProcessors];
 		for(int i = 0;i < numProcessors;i++) {
-			MyRunnableDouble task = new MyRunnableDouble(i*chunkSize, (i+1)*chunkSize);
+			MyRunnableDouble task = new MyRunnableDouble(i*chunkSize, (i+1)*chunkSize, aVals, bVals);
 			tasks[i] = task;
 			taskExecutor.execute(task);
 		}
@@ -149,18 +157,8 @@ public class OpenCL4JavaBasicTest {
         return new double[] {avgAbsoluteError, avgRelativeError};
     }
 
-    private static Pointer<Double> executeOnDeviceDouble(CLKernel kernel, CLContext context, int dataSize, int blockSize) {
+    private static Pointer<Double> executeOnDeviceDouble(CLKernel kernel, CLContext context, int dataSize, int blockSize, double[] aVals, double[] bVals) {
         CLQueue queue = context.createDefaultQueue();
-
-        double[] aVals = new double[dataSize];
-        double[] bVals = new double[dataSize];
-        for (int i = 0; i < dataSize; i++) {
-            double value = (double)i;
-            //a.set(i, value);
-            //b.set(i, value);
-            aVals[i] = value;
-            bVals[i] = value;
-        }
         // Ask for execution of the kernel with global size = dataSize
         int numThreads = ((dataSize-1)/blockSize + 1)*blockSize;
 		System.out.println("dataSize: " + dataSize + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
@@ -196,17 +194,8 @@ public class OpenCL4JavaBasicTest {
 		return output;
     }
 
-    private static Pointer<Float> executeOnDevice(CLKernel kernel, CLContext context, int dataSize, int blockSize) {
+    private static Pointer<Float> executeOnDevice(CLKernel kernel, CLContext context, int dataSize, int blockSize, float[] aVals, float[] bVals) {
         CLQueue queue = context.createDefaultQueue();
-        float[] aVals = new float[dataSize];
-        float[] bVals = new float[dataSize];
-        for (int i = 0; i < dataSize; i++) {
-            float value = (float)i;
-            //a.set(i, value);
-            //b.set(i, value);
-            aVals[i] = value;
-            bVals[i] = value;
-        }
         // Ask for execution of the kernel with global size = dataSize
         int numThreads = ((dataSize-1)/blockSize + 1)*blockSize;
 		System.out.println("dataSize: " + dataSize + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
@@ -374,15 +363,35 @@ public class OpenCL4JavaBasicTest {
             }
 
 			if(doubleMode) {
-				Pointer<Double> output = executeOnDeviceDouble(kernel, context, dataSize, blockSize);
-				MyRunnableDouble[] tasks = executeOnHostDouble(dataSize);
+		        double[] aVals = new double[dataSize];
+		        double[] bVals = new double[dataSize];
+		        for (int i = 0; i < dataSize; i++) {
+		            double value = (double)i;
+		            //a.set(i, value);
+		            //b.set(i, value);
+		            aVals[i] = value;
+		            bVals[i] = value;
+		        }
+
+				Pointer<Double> output = executeOnDeviceDouble(kernel, context, dataSize, blockSize, aVals, bVals);
+				MyRunnableDouble[] tasks = executeOnHostDouble(dataSize, aVals, bVals);
 				double[] diff = computeDifferenceDouble(output, tasks,  dataSize);
 	            System.out.println("Average absolute error = " + diff[0]);
 	            System.out.println("Average relative error = " + diff[1]);				
 			}
 			else {
-				Pointer<Float> output = executeOnDevice(kernel, context, dataSize, blockSize);
-				MyRunnable[] tasks = executeOnHost(dataSize);
+		        float[] aVals = new float[dataSize];
+		        float[] bVals = new float[dataSize];
+		        for (int i = 0; i < dataSize; i++) {
+		            float value = (float)i;
+		            //a.set(i, value);
+		            //b.set(i, value);
+		            aVals[i] = value;
+		            bVals[i] = value;
+		        }
+
+				Pointer<Float> output = executeOnDevice(kernel, context, dataSize, blockSize, aVals, bVals);
+				MyRunnable[] tasks = executeOnHost(dataSize, aVals, bVals);
 				double[] diff = computeDifference(output, tasks,  dataSize);
 	            System.out.println("Average absolute error = " + diff[0]);
 	            System.out.println("Average relative error = " + diff[1]);
