@@ -1,10 +1,14 @@
 package trial.javacl;
 
 import static com.nativelibs4java.opencl.JavaCL.createBestContext;
-import static org.bridj.Pointer.pointerToFloats;
 
+import java.nio.ByteBuffer;
 import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.security.SecureRandom;
+import java.util.Date;
+import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -134,6 +138,7 @@ public class OpenCL4JavaBasicTest {
 
             totalAbsoluteError += d < 0 ? -d : d;
         }
+		output.release();
         double avgAbsoluteError = totalAbsoluteError / dataSize;
         double avgRelativeError = totalRelativeError / dataSize;
         return new double[] {avgAbsoluteError, avgRelativeError};
@@ -152,6 +157,7 @@ public class OpenCL4JavaBasicTest {
 
             totalAbsoluteError += d < 0 ? -d : d;
         }
+		output.release();
         double avgAbsoluteError = totalAbsoluteError / dataSize;
         double avgRelativeError = totalRelativeError / dataSize;
         return new double[] {avgAbsoluteError, avgRelativeError};
@@ -188,6 +194,8 @@ public class OpenCL4JavaBasicTest {
         // Copy the OpenCL-hosted array back to RAM
         Pointer<Double> output = memOut.read(queue);
 		long t2_g = System.currentTimeMillis();
+		memIn1.release();
+		memIn2.release();
 		System.out.println("Device data transfer time: " + ((t_dataXfr1_g - t1_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr1_g) + "ms");
 		System.out.println("Device time diff: " + (t2_g-t1_g) + " ms");
 
@@ -202,8 +210,8 @@ public class OpenCL4JavaBasicTest {
 
 		long t1_g = System.currentTimeMillis();
         /// Create direct NIO buffers and fill them with data in the correct byte order
-        Pointer<Float> a = pointerToFloats(aVals).order(context.getKernelsDefaultByteOrder());
-        Pointer<Float> b = pointerToFloats(bVals).order(context.getKernelsDefaultByteOrder());
+        //Pointer<Float> a = pointerToFloats(aVals).order(context.getKernelsDefaultByteOrder());
+        //Pointer<Float> b = pointerToFloats(bVals).order(context.getKernelsDefaultByteOrder());
 
         // Allocate OpenCL-hosted memory for inputs and output, 
         // with inputs initialized as copies of the NIO buffers
@@ -225,12 +233,132 @@ public class OpenCL4JavaBasicTest {
         // Copy the OpenCL-hosted array back to RAM
         Pointer<Float> output = memOut.read(queue);
 		long t2_g = System.currentTimeMillis();
+		memIn1.release();
+		memIn2.release();
 		System.out.println("Device data transfer time: " + ((t_dataXfr1_g - t1_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr1_g) + "ms");
 		System.out.println("Device time diff: " + (t2_g-t1_g) + " ms");
 
 		return output;
     }
 
+ // getting, setting and clearing bitMap array bits based on position(offset)
+    private static void set(byte[] BitMap, int offset) 
+    { 
+           BitMap[offset >> 3]|= 1<<(offset & 7); 
+    } 
+    private static void clear(byte[] BitMap, int offset)
+    { 
+           BitMap[offset >> 3] &= ~(1 << (offset & 7)); 
+    } 
+    private boolean get(byte BitMap, int offset)
+    {
+    	return ((BitMap >> (offset & 7)) & 1) != 0;
+    }
+
+    //Kudu equivalent CPU implementation...just for testing purpose 
+    private static void predicate_eval(Object col, int typeSize, long size, long lk, long hk,
+    		 boolean lkValid, boolean hkValid, byte[] hostBitMap, boolean is_nullable, 
+    		 byte[] null_bitmap)
+    {
+    	long colValue = 0;
+    	if(col == null || hostBitMap == null || (is_nullable && (null_bitmap == null)))
+    	{
+    		return;	
+    	}
+    	else
+    	{
+    		for(int i=0; i<size; i++)
+    		{
+
+    			if (is_nullable && (null_bitmap[i >> 3] & (1 << (i & 7))) == 0)
+    			{
+    				clear(hostBitMap ,i);
+    			}
+    			else
+    			{
+    				if(typeSize == 4)
+    					colValue = ((int[]) col)[i];
+    				else if(typeSize == 8)
+    					colValue = ((long[]) col)[i];
+    				else
+    					colValue = ((byte[]) col)[i];
+    				if((lkValid && (colValue < lk)) || (hkValid && (colValue > hk)))
+    				{
+    					clear(hostBitMap ,i);// bitVec[i] = 0;
+    				}
+    				else
+    				{
+    					set(hostBitMap, i);
+    				}
+    			}
+    		}
+    	}
+    }
+
+    private static Pointer<Byte> executeOnDeviceFilter(CLKernel kernel, CLContext context, int blockSize, boolean isWithoutDivergence, Object colData, int typeSize, long dataSize, long lk, long hk,
+   		 boolean lkValid, boolean hkValid, boolean is_nullable, 
+   		 byte[] null_bitmap) {
+        CLQueue queue = context.createDefaultQueue();
+        // Ask for execution of the kernel with global size = dataSize
+        int numThreads = 0;
+        
+        if(isWithoutDivergence)
+        	numThreads = (int) (((dataSize-1)/(blockSize*8) + 1)*blockSize);
+        else
+        	numThreads = (int) (((dataSize-1)/(blockSize) + 1)*blockSize);
+        
+		System.out.println("dataSize: " + dataSize + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
+
+		long t1_g = System.currentTimeMillis();
+
+        // Allocate OpenCL-hosted memory for inputs and output, 
+        // with inputs initialized as copies of the NIO buffers
+        IntBuffer colBuffer = IntBuffer.wrap((int[]) colData);
+        ByteBuffer null_bitmapBuffer = ByteBuffer.wrap(null_bitmap);
+        CLBuffer<Integer> memIn1 = context.createIntBuffer(CLMem.Usage.Input, colBuffer, true); // 'true' : copy provided data
+        CLBuffer<Byte> memIn2 = context.createByteBuffer(CLMem.Usage.Input, null_bitmapBuffer, true);
+        CLBuffer<Byte> memOut = context.createBuffer(CLMem.Usage.Output, Byte.class, null_bitmap.length);
+		long t_dataXfr1_g = System.currentTimeMillis();
+        // Bind these memory objects to the arguments of the kernel
+        kernel.setArgs(memIn1, typeSize, dataSize, lk, hk, lkValid, hkValid, memOut, is_nullable, memIn2);
+
+        kernel.enqueueNDRange(queue, new int[]{numThreads}, new int[]{blockSize});
+
+        // Wait for all operations to be performed
+        queue.finish();
+		long t_execute_g = System.currentTimeMillis();
+		
+        // Copy the OpenCL-hosted array back to RAM
+        Pointer<Byte> output = memOut.read(queue);
+		long t2_g = System.currentTimeMillis();
+		memIn1.release();
+		memIn2.release();
+		System.out.println("Device data transfer time: " + ((t_dataXfr1_g - t1_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr1_g) + "ms");
+		System.out.println("Device time diff: " + (t2_g-t1_g) + " ms");
+
+		return output;
+    }
+
+    private static double[] computeDifferenceFilterResults(Pointer<Byte> output, byte[] cpuResults) {
+        // Compute absolute and relative average errors wrt Java implementation
+        double totalAbsoluteError = 0, totalRelativeError = 0;
+		for(int i = 0;i < cpuResults.length;i++) {
+			byte expected = cpuResults[i];
+            byte result = output.get(i);
+            double d = result - expected;
+            if(result != expected)
+            	System.out.format("Result %d different from expected %d at index: %d\n", result, expected, i);
+            if (expected != 0) {
+                totalRelativeError += d / expected;
+            }
+
+            totalAbsoluteError += d < 0 ? -d : d;
+        }
+		output.release();
+        double avgAbsoluteError = totalAbsoluteError / cpuResults.length;
+        double avgRelativeError = totalRelativeError / cpuResults.length;
+        return new double[] {avgAbsoluteError, avgRelativeError};
+    }
 
     public static void main(String[] args) {
         try {
@@ -319,6 +447,57 @@ public class OpenCL4JavaBasicTest {
                     "   int i = get_global_id(0);                                      \n" +
                     "   if(i < dataSize) output[i] = sin(exp(cos(sin(a[i]) * sin(b[i]) + 1)));                              \n" +
                     "}                                                                 \n";
+			
+			//System.out.println("Kernel function: " +  src);
+            CLProgram program = context.createProgram(src);
+            if(doubleMode)
+            	program = program.defineMacro("CONFIG_USE_DOUBLE", "1");
+            
+            program = program.build();
+			CLKernel kernel = program.createKernel("aSinB");
+            System.out.println("kernel workgroup size: " + kernel.getWorkGroupSize());
+            for(CLDevice d : context.getDevices()) {
+                long[] sizes = d.getMaxWorkItemSizes();
+                System.out.println("Device: " + d.getName() + ", max workgroup size: " + d.getMaxWorkGroupSize()
+                                                            + ", workItemSizes: " + sizes[0] + ", " + sizes[1] + ", " + sizes[2]);
+            }
+
+			if(doubleMode) {
+		        double[] aVals = new double[dataSize];
+		        double[] bVals = new double[dataSize];
+		        for (int i = 0; i < dataSize; i++) {
+		            double value = (double)i;
+		            //a.set(i, value);
+		            //b.set(i, value);
+		            aVals[i] = value;
+		            bVals[i] = value;
+		        }
+/*
+				Pointer<Double> output = executeOnDeviceDouble(kernel, context, dataSize, blockSize, aVals, bVals);
+				MyRunnableDouble[] tasks = executeOnHostDouble(dataSize, aVals, bVals);
+				double[] diff = computeDifferenceDouble(output, tasks,  dataSize);
+	            System.out.println("Average absolute error = " + diff[0]);
+	            System.out.println("Average relative error = " + diff[1]);				
+*/			}
+			else {
+		        float[] aVals = new float[dataSize];
+		        float[] bVals = new float[dataSize];
+		        for (int i = 0; i < dataSize; i++) {
+		            float value = (float)i;
+		            //a.set(i, value);
+		            //b.set(i, value);
+		            aVals[i] = value;
+		            bVals[i] = value;
+		        }
+
+/*				Pointer<Float> output = executeOnDevice(kernel, context, dataSize, blockSize, aVals, bVals);
+				MyRunnable[] tasks = executeOnHost(dataSize, aVals, bVals);
+				double[] diff = computeDifference(output, tasks,  dataSize);
+	            System.out.println("Average absolute error = " + diff[0]);
+	            System.out.println("Average relative error = " + diff[1]);
+*/			}
+			
+			@SuppressWarnings("unused")
 			String structured_src = "\n" +
 			"typedef struct trial_aparapi_AparapiTrial$MyStruct_s{\n" +
 			"float  a;\n" + 
@@ -347,56 +526,137 @@ public class OpenCL4JavaBasicTest {
 			"   }\n" +
 			"}\n" +
 			"";
+
+			String filterPredicateKernel_no_divergence = "\n" +
+					" typedef unsigned char uchar_t; \n" +
+					"__kernel void transform(global unsigned char *col, int typeSize, long size, long lk, long hk,   \n" +
+					"         int lkValid, int hkValid, global unsigned char *bitVec, int is_nullable, global const unsigned char *null_bitmap) \n" +
+					"{ \n" +
+					"    int gloId = get_global_id(0); \n" +
+					"    //int offset = get_global_offset(0); \n" +
+					"    int locId = get_local_id(0); \n" +
+					"    int groupId = get_group_id(0); \n" +
+					"    int localSize = get_local_size(0); \n" +
+					"    int locId8 = locId << 3; \n" +
+					"    unsigned char finalByte = 0; \n" +
+					"    unsigned char null_bits = null_bitmap[gloId]; \n" +
+					"    int startIndex = gloId + 7*groupId*localSize; \n" +
+					"    TYPE *colValuesP = ((TYPE *) col ) + startIndex; \n" +
+					"    local TYPE localVals[LOCAL_WORK_SIZE << 3]; \n" +
+					"    // Get values in local shared memory in a coalesced manner. One thread gets 8 values. \n" +
+					"    for(int i = 0;i < 8;i++) { \n" +
+					"        int iBlock = i*localSize; \n" +
+					"        if((startIndex + iBlock) < size) \n" +
+					"            localVals[locId + iBlock] = colValuesP[iBlock]; \n" +
+					"        else \n" +
+					"            localVals[locId + iBlock] = (TYPE) 0; \n" +
+					"    } \n" + 
+					"    barrier(CLK_LOCAL_MEM_FENCE); \n " +
+					"    for(int i = 0; i < 8;i++) { \n" +
+					"        bool null_check = is_nullable && !(null_bits & (1 << i)); \n" +
+					"        bool filter_check = (lkValid && localVals[locId8 + i] < lk) || (hkValid && localVals[locId8 + i] > hk); \n" +
+					"        bool check = !null_check && !filter_check; \n" +
+					"        if(check) \n" +
+					"            finalByte |= 1 << i; \n" +
+					"    } \n" +
+					"    // This ensures that we access global memory for this byte only once. \n" +
+					"    bitVec[gloId] = finalByte; \n" +
+					"} \n"
+					;
 			
-			//System.out.println("Kernel function: " +  src);
-            CLProgram program = context.createProgram(src);
-            if(doubleMode)
-            	program = program.defineMacro("CONFIG_USE_DOUBLE", "1");
+			String filterPredicateKernel_with_divergence = "\n" +
+					" typedef unsigned char uchar_t; \n" +
+					"__kernel void transform(global unsigned char *col, int typeSize, long size, long lk, long hk,   \n" +
+					"         int lkValid, int hkValid, global unsigned char *bitVec, int is_nullable, global const unsigned char *null_bitmap) \n" +
+					"{ \n" +
+					"    int gloId = get_global_id(0); \n" +
+					"    if(gloId < size) { \n" +
+					"        TYPE colValue = *(((global TYPE*)col) + gloId); \n" +
+					"        bool null_check = is_nullable && !(null_bitmap[gloId >> 3] & (1 << (gloId & 7))); \n" +
+					"        if(!(gloId & 7)) \n" +
+					"            bitVec[gloId >> 3] = 0; \n" +
+					"        bool filter_check = (lkValid && (colValue < lk)) || (hkValid && (colValue > hk)); \n" +
+					"        bool check = !null_check && !filter_check; \n" +
+					"        for(int i = 0; i < 8; i++) \n" +
+					"        { \n" +
+					"            if((gloId & 7) == i) \n" +
+					"            {        \n" +
+					"                 if(check) \n" +
+					"                 { \n" +
+					"                     bitVec[gloId >> 3] |= 1 << i; \n" +
+					"                 } \n" +
+					"            } \n" +
+					"            barrier(CLK_GLOBAL_MEM_FENCE); \n" +
+					"        } \n" +
+					"    } \n" +
+					"} \n"
+			;
+
+			int typeSize = 4;
+			blockSize = 256;
+			
+			CLProgram programFilterKernel_no_divergence = context.createProgram(filterPredicateKernel_no_divergence);
+            programFilterKernel_no_divergence = programFilterKernel_no_divergence.defineMacro("LOCAL_WORK_SIZE", Integer.toString(blockSize));
+            if(typeSize == 4)
+            	programFilterKernel_no_divergence = programFilterKernel_no_divergence.defineMacro("TYPE", "int");
+            else if(typeSize == 8)
+            	programFilterKernel_no_divergence = programFilterKernel_no_divergence.defineMacro("TYPE", "long");
+            else
+            	programFilterKernel_no_divergence = programFilterKernel_no_divergence.defineMacro("TYPE", "uchar_t");
             
-            program = program.build();
-			CLKernel kernel = program.createKernel("aSinB");
-            System.out.println("kernel workgroup size: " + kernel.getWorkGroupSize());
-            for(CLDevice d : context.getDevices()) {
-                long[] sizes = d.getMaxWorkItemSizes();
-                System.out.println("Device: " + d.getName() + ", max workgroup size: " + d.getMaxWorkGroupSize()
-                                                            + ", workItemSizes: " + sizes[0] + ", " + sizes[1] + ", " + sizes[2]);
-            }
+            programFilterKernel_no_divergence = programFilterKernel_no_divergence.build();
+			CLKernel kernelFilterKernel_no_divergence = programFilterKernel_no_divergence.createKernel("transform");
+			
+			CLProgram programFilterKernel_with_divergence = context.createProgram(filterPredicateKernel_with_divergence);            
+			programFilterKernel_with_divergence = programFilterKernel_with_divergence.defineMacro("LOCAL_WORK_SIZE", Integer.toString(blockSize));
+			if(typeSize == 4)
+            	programFilterKernel_with_divergence = programFilterKernel_with_divergence.defineMacro("TYPE", "int");
+            else if(typeSize == 8)
+            	programFilterKernel_with_divergence = programFilterKernel_with_divergence.defineMacro("TYPE", "long");
+            else
+            	programFilterKernel_with_divergence = programFilterKernel_with_divergence.defineMacro("TYPE", "uchar_t");
 
-			if(doubleMode) {
-		        double[] aVals = new double[dataSize];
-		        double[] bVals = new double[dataSize];
-		        for (int i = 0; i < dataSize; i++) {
-		            double value = (double)i;
-		            //a.set(i, value);
-		            //b.set(i, value);
-		            aVals[i] = value;
-		            bVals[i] = value;
-		        }
+			programFilterKernel_with_divergence = programFilterKernel_with_divergence.build();
+			CLKernel kernelFilterKernel_with_divergence = programFilterKernel_with_divergence.createKernel("transform");
 
-				Pointer<Double> output = executeOnDeviceDouble(kernel, context, dataSize, blockSize, aVals, bVals);
-				MyRunnableDouble[] tasks = executeOnHostDouble(dataSize, aVals, bVals);
-				double[] diff = computeDifferenceDouble(output, tasks,  dataSize);
-	            System.out.println("Average absolute error = " + diff[0]);
-	            System.out.println("Average relative error = " + diff[1]);				
+			dataSize = 15*1024*1024;
+	        int[] col = new int[dataSize];
+			int bitmapSize = (dataSize - 1)/8 + 1;
+	        byte[] null_bitmap = new byte[bitmapSize];
+	        byte[] hostResults = new byte[bitmapSize];
+	        Random colGenerator = new SecureRandom();
+	        Random nullGenerator = new SecureRandom();
+	        long lk = 500, hk = 100000;
+	        boolean lkValid = true, hkValid = true, is_nullable = true;
+
+	        colGenerator.setSeed(new Date().getTime());
+	        nullGenerator.setSeed(new Date().getTime());
+
+	        for (int i = 0; i < dataSize; i++) {
+	            col[i] = colGenerator.nextInt((int) (2*hk));
+	        }
+	        for (int i = 0; i < bitmapSize; i++) {
+	            null_bitmap[i] = (byte) nullGenerator.nextInt(256);
+	        }
+
+			predicate_eval(col, typeSize, dataSize, lk, hk, lkValid, hkValid, hostResults, is_nullable, null_bitmap);
+
+			System.out.println("*** Filter computation without thread divergence ****");
+			for(int i = 0;i < 10;i++)
+			{
+		        Pointer<Byte> output = executeOnDeviceFilter(kernelFilterKernel_no_divergence, context, blockSize, true, col, typeSize, dataSize, lk, hk, lkValid, hkValid, is_nullable, null_bitmap);
+		        double[] diff = computeDifferenceFilterResults(output, hostResults);
+	            System.out.println("Kernel without divergence: Average absolute error = " + diff[0] + ", Average relative error = " + diff[1]);
+			}			
+
+			System.out.println("*** Filter computation with thread divergence ****");
+			for(int i = 0;i < 10;i++)
+			{
+				Pointer<Byte> output = executeOnDeviceFilter(kernelFilterKernel_with_divergence, context, blockSize, false, col, typeSize, dataSize, lk, hk, lkValid, hkValid, is_nullable, null_bitmap);
+	            double[] diff = computeDifferenceFilterResults(output, hostResults);
+	            System.out.println("Kernel with divergence: Average absolute error = " + diff[0] + ", Average relative error = " + diff[1]);
 			}
-			else {
-		        float[] aVals = new float[dataSize];
-		        float[] bVals = new float[dataSize];
-		        for (int i = 0; i < dataSize; i++) {
-		            float value = (float)i;
-		            //a.set(i, value);
-		            //b.set(i, value);
-		            aVals[i] = value;
-		            bVals[i] = value;
-		        }
-
-				Pointer<Float> output = executeOnDevice(kernel, context, dataSize, blockSize, aVals, bVals);
-				MyRunnable[] tasks = executeOnHost(dataSize, aVals, bVals);
-				double[] diff = computeDifference(output, tasks,  dataSize);
-	            System.out.println("Average absolute error = " + diff[0]);
-	            System.out.println("Average relative error = " + diff[1]);
-			}
-
+			
         } catch (Exception ex) {
             ex.printStackTrace();
         }
