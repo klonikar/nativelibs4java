@@ -346,8 +346,8 @@ public class OpenCL4JavaBasicTest {
 			byte expected = cpuResults[i];
             byte result = output.get(i);
             double d = result - expected;
-            if(result != expected)
-            	System.out.format("Result %d different from expected %d at index: %d\n", result, expected, i);
+            //if(result != expected)
+            //	System.out.format("Result %d different from expected %d at index: %d\n", result, expected, i);
             if (expected != 0) {
                 totalRelativeError += d / expected;
             }
@@ -541,7 +541,7 @@ public class OpenCL4JavaBasicTest {
 					"    unsigned char finalByte = 0; \n" +
 					"    unsigned char null_bits = null_bitmap[gloId]; \n" +
 					"    int startIndex = gloId + 7*groupId*localSize; \n" +
-					"    TYPE *colValuesP = col + startIndex; \n" +
+					"    global TYPE *colValuesP = col + startIndex; \n" +
 					"    local TYPE localVals[LOCAL_WORK_SIZE << 3]; \n" +
 					"    // Get values in local shared memory in a coalesced manner. One thread gets 8 values. \n" +
 					"    for(int i = 0;i < 8;i++) { \n" +
