@@ -490,12 +490,12 @@ public class OpenCL4JavaBasicTest {
 		            bVals[i] = value;
 		        }
 
-/*				Pointer<Float> output = executeOnDevice(kernel, context, dataSize, blockSize, aVals, bVals);
+				Pointer<Float> output = executeOnDevice(kernel, context, dataSize, blockSize, aVals, bVals);
 				MyRunnable[] tasks = executeOnHost(dataSize, aVals, bVals);
 				double[] diff = computeDifference(output, tasks,  dataSize);
 	            System.out.println("Average absolute error = " + diff[0]);
 	            System.out.println("Average relative error = " + diff[1]);
-*/			}
+			}
 			
 			@SuppressWarnings("unused")
 			String structured_src = "\n" +
