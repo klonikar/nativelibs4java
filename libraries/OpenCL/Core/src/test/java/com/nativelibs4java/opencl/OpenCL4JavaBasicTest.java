@@ -295,9 +295,9 @@ public class OpenCL4JavaBasicTest {
     	}
     }
 
-    private static Pointer<Byte> executeOnDeviceFilter(CLKernel kernel, CLContext context, int blockSize, boolean isWithoutDivergence, Object colData, int dataSize, int lk, int hk,
-   		 boolean lkValid, boolean hkValid, boolean is_nullable, 
-   		 byte[] null_bitmap) {
+    private static Pointer<Byte> executeOnDeviceFilter(CLKernel kernel, CLContext context, int blockSize, boolean isWithoutDivergence, Object colData, long dataSize, long lk, long hk,
+   		                                               boolean lkValid, boolean hkValid, boolean is_nullable, 
+   		                                               byte[] null_bitmap) {
         CLQueue queue = context.createDefaultQueue();
         // Ask for execution of the kernel with global size = dataSize
         int numThreads = 0;
@@ -307,7 +307,7 @@ public class OpenCL4JavaBasicTest {
         else
         	numThreads = (int) (((dataSize-1)/(blockSize) + 1)*blockSize);
         
-		System.out.println("dataSize: " + dataSize + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
+		System.out.println("dataSize: " + dataSize + ", bitmap size: " + null_bitmap.length + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
 
 		long t1_g = System.currentTimeMillis();
 
@@ -320,7 +320,8 @@ public class OpenCL4JavaBasicTest {
         CLBuffer<Byte> memOut = context.createBuffer(CLMem.Usage.Output, Byte.class, null_bitmap.length);
 		long t_dataXfr1_g = System.currentTimeMillis();
         // Bind these memory objects to the arguments of the kernel
-        kernel.setArgs(memIn1, dataSize, lk, hk, lkValid, hkValid, memOut, is_nullable, memIn2);
+		int iLkValid = lkValid ? 1 : 0, iHkValid = hkValid ? 1 : 0, iIs_nullable = is_nullable ? 1 : 0;
+        kernel.setArgs(memIn1, dataSize, lk, hk, iLkValid, iHkValid, memOut, iIs_nullable, memIn2);
 
         kernel.enqueueNDRange(queue, new int[]{numThreads}, new int[]{blockSize});
 
@@ -490,12 +491,12 @@ public class OpenCL4JavaBasicTest {
 		            bVals[i] = value;
 		        }
 
-				Pointer<Float> output = executeOnDevice(kernel, context, dataSize, blockSize, aVals, bVals);
+/*				Pointer<Float> output = executeOnDevice(kernel, context, dataSize, blockSize, aVals, bVals);
 				MyRunnable[] tasks = executeOnHost(dataSize, aVals, bVals);
 				double[] diff = computeDifference(output, tasks,  dataSize);
 	            System.out.println("Average absolute error = " + diff[0]);
 	            System.out.println("Average relative error = " + diff[1]);
-			}
+*/			}
 			
 			@SuppressWarnings("unused")
 			String structured_src = "\n" +
@@ -529,17 +530,19 @@ public class OpenCL4JavaBasicTest {
 
 			String filterPredicateKernel_no_divergence = "\n" +
 					" typedef unsigned char uchar_t; \n" +
-					"__kernel void transform(global TYPE *col, long size, long lk, long hk,   \n" +
+					"__kernel void transform_no_divergence(global TYPE *col, long size, long lk, long hk,   \n" +
 					"         int lkValid, int hkValid, global uchar_t *bitVec, int is_nullable, global const uchar_t *null_bitmap) \n" +
 					"{ \n" +
-					"    int gloId = get_global_id(0); \n" +
+					"  int gloId = get_global_id(0); \n" +
+					"  int bitmapSize = (size - 1)/8 + 1; \n" +
+					"  //if(gloId < bitmapSize) { \n" +
 					"    //int offset = get_global_offset(0); \n" +
 					"    int locId = get_local_id(0); \n" +
 					"    int groupId = get_group_id(0); \n" +
 					"    int localSize = get_local_size(0); \n" +
 					"    int locId8 = locId << 3; \n" +
-					"    unsigned char finalByte = 0; \n" +
-					"    unsigned char null_bits = null_bitmap[gloId]; \n" +
+					"    uchar_t finalByte = 0; \n" +
+					"    uchar_t null_bits = null_bitmap[gloId]; \n" +
 					"    int startIndex = gloId + 7*groupId*localSize; \n" +
 					"    global TYPE *colValuesP = col + startIndex; \n" +
 					"    local TYPE localVals[LOCAL_WORK_SIZE << 3]; \n" +
@@ -561,6 +564,7 @@ public class OpenCL4JavaBasicTest {
 					"    } \n" +
 					"    // This ensures that we access global memory for this byte only once. \n" +
 					"    bitVec[gloId] = finalByte; \n" +
+					"  //} \n" +
 					"} \n"
 					;
 			
@@ -605,7 +609,7 @@ public class OpenCL4JavaBasicTest {
             	programFilterKernel_no_divergence = programFilterKernel_no_divergence.defineMacro("TYPE", "uchar_t");
             
             programFilterKernel_no_divergence = programFilterKernel_no_divergence.build();
-			CLKernel kernelFilterKernel_no_divergence = programFilterKernel_no_divergence.createKernel("transform");
+			CLKernel kernelFilterKernel_no_divergence = programFilterKernel_no_divergence.createKernel("transform_no_divergence");
 			
 			CLProgram programFilterKernel_with_divergence = context.createProgram(filterPredicateKernel_with_divergence);            
 			programFilterKernel_with_divergence = programFilterKernel_with_divergence.defineMacro("LOCAL_WORK_SIZE", Integer.toString(blockSize));
@@ -619,14 +623,14 @@ public class OpenCL4JavaBasicTest {
 			programFilterKernel_with_divergence = programFilterKernel_with_divergence.build();
 			CLKernel kernelFilterKernel_with_divergence = programFilterKernel_with_divergence.createKernel("transform");
 
-			dataSize = 15*1024*1024;
+			dataSize = 16*1024*1024;
 	        int[] col = new int[dataSize];
 			int bitmapSize = (dataSize - 1)/8 + 1;
 	        byte[] null_bitmap = new byte[bitmapSize];
 	        byte[] hostResults = new byte[bitmapSize];
 	        Random colGenerator = new SecureRandom();
 	        Random nullGenerator = new SecureRandom();
-	        int lk = 500, hk = 100000;
+	        long lk = 500, hk = 100000;
 	        boolean lkValid = true, hkValid = true, is_nullable = true;
 
 	        colGenerator.setSeed(new Date().getTime());
@@ -644,7 +648,7 @@ public class OpenCL4JavaBasicTest {
 			System.out.println("*** Filter computation without thread divergence ****");
 			for(int i = 0;i < 10;i++)
 			{
-		        Pointer<Byte> output = executeOnDeviceFilter(kernelFilterKernel_no_divergence, context, blockSize, true, col, (int) dataSize, lk, hk, lkValid, hkValid, is_nullable, null_bitmap);
+		        Pointer<Byte> output = executeOnDeviceFilter(kernelFilterKernel_no_divergence, context, blockSize, true, col, dataSize, lk, hk, lkValid, hkValid, is_nullable, null_bitmap);
 		        double[] diff = computeDifferenceFilterResults(output, hostResults);
 	            System.out.println("Kernel without divergence: Average absolute error = " + diff[0] + ", Average relative error = " + diff[1]);
 			}			
@@ -652,7 +656,7 @@ public class OpenCL4JavaBasicTest {
 			System.out.println("*** Filter computation with thread divergence ****");
 			for(int i = 0;i < 10;i++)
 			{
-				Pointer<Byte> output = executeOnDeviceFilter(kernelFilterKernel_with_divergence, context, blockSize, false, col, (int) dataSize, lk, hk, lkValid, hkValid, is_nullable, null_bitmap);
+				Pointer<Byte> output = executeOnDeviceFilter(kernelFilterKernel_with_divergence, context, blockSize, false, col, dataSize, lk, hk, lkValid, hkValid, is_nullable, null_bitmap);
 	            double[] diff = computeDifferenceFilterResults(output, hostResults);
 	            System.out.println("Kernel with divergence: Average absolute error = " + diff[0] + ", Average relative error = " + diff[1]);
 			}
