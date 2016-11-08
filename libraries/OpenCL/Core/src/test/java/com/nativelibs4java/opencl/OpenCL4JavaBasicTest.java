@@ -25,7 +25,7 @@ import com.nativelibs4java.opencl.CLPlatform.DeviceFeature;
 import com.nativelibs4java.opencl.CLProgram;
 import com.nativelibs4java.opencl.CLQueue;
 import com.nativelibs4java.opencl.JavaCL;
-
+// Download javacl jar from: https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/javacl/javacl-1.0.0-RC3-shaded.jar
 // javac -cp javacl-1.0.0-RC3-shaded.jar -d . OpenCL4JavaBasicTest.java
 // java -cp javacl-1.0.0-RC3-shaded.jar;. trial.javacl.OpenCL4JavaBasicTest 1000000
 public class OpenCL4JavaBasicTest {
