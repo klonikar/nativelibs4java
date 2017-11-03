@@ -253,37 +253,96 @@ public class OpenCL4JavaBasicTest {
 
         // Allocate OpenCL-hosted memory for inputs and output, 
         // with inputs initialized as copies of the NIO buffers
-        FloatBuffer aBuffer = FloatBuffer.wrap(aVals);
+        //FloatBuffer aBuffer = FloatBuffer.wrap(aVals);
         FloatBuffer bBuffer = FloatBuffer.wrap(bVals);
-        CLBuffer<Float> memIn1 = context.createFloatBuffer(CLMem.Usage.Input, aBuffer, true); // 'true' : copy provided data
-        CLBuffer<Float> memIn2 = context.createFloatBuffer(CLMem.Usage.Input, bBuffer, true);
+        CLBuffer<Float> memIn1 = context.createFloatBuffer(CLMem.Usage.Input, aVals.length);
+        CLBuffer<Float> memIn2 = context.createFloatBuffer(CLMem.Usage.Input, bBuffer, true); // 'true' : copy provided data
         CLBuffer<Float> memOut = context.createBuffer(CLMem.Usage.Output, Float.class, num_vectors);
 		long t_dataXfr1_g = System.currentTimeMillis();
+		System.out.println("Device data transfer time for database buffer: " + (t_dataXfr1_g - t1_g) + "ms");
         // Bind these memory objects to the arguments of the kernel
         kernel.setArgs(memIn1, memIn2, memOut);
         kernel.setLocalArg(3, blockSize*4*4);
 
-        kernel.enqueueNDRange(queue, new int[]{numThreads}, new int[]{blockSize});
-
-        // Wait for all operations to be performed
-        queue.finish();
-		long t_execute_g = System.currentTimeMillis();
-		
-        // Copy the OpenCL-hosted array back to RAM
-        Pointer<Float> output = memOut.read(queue);
+        Pointer<Float> output = null;
+        for(int i = 0;i < 10;i++) {  // execute the kernel number of times for performance test. Return output of final run.
+        	long t_dataXfr2_g = System.currentTimeMillis();
+	        Pointer<Float> aIn = Pointer.pointerToFloats(aVals);
+	        memIn1.write(queue, aIn, false);
+	        long t_dataXfr3_g = System.currentTimeMillis();
+	        kernel.enqueueNDRange(queue, new int[]{numThreads}, new int[]{blockSize});
+	
+	        // Wait for all operations to be performed
+	        queue.finish();
+			long t_execute_g = System.currentTimeMillis();
+			
+	        // Copy the OpenCL-hosted array back to RAM
+	        output = memOut.read(queue);
+	        
+			long t2_g = System.currentTimeMillis();
+	
+			System.out.println("Device data transfer time: " + ((t_dataXfr3_g - t_dataXfr2_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr3_g) + "ms");
+			System.out.println("Device time diff: " + (t2_g-t_dataXfr2_g) + " ms");
+        }
         
-		long t2_g = System.currentTimeMillis();
-
 		memIn1.release();
 		memIn2.release();
 		memOut.release();
-		System.out.println("Device data transfer time: " + ((t_dataXfr1_g - t1_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr1_g) + "ms");
-		System.out.println("Device time diff: " + (t2_g-t1_g) + " ms");
 
 		return output;
     }
 
- // getting, setting and clearing bitMap array bits based on position(offset)
+    private static Pointer<Float> executeOnDeviceDist2(CLKernel kernel, CLContext context, int blockSize, int num_vectors, float[] aVals, float[] bVals) {
+        CLQueue queue = context.createDefaultQueue();
+        int numThreads = num_vectors;
+		System.out.println("num_vectors: " + num_vectors + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
+
+		long t1_g = System.currentTimeMillis();
+        /// Create direct NIO buffers and fill them with data in the correct byte order
+        //Pointer<Float> a = pointerToFloats(aVals).order(context.getKernelsDefaultByteOrder());
+        //Pointer<Float> b = pointerToFloats(bVals).order(context.getKernelsDefaultByteOrder());
+
+        // Allocate OpenCL-hosted memory for inputs and output, 
+        // with inputs initialized as copies of the NIO buffers
+        //FloatBuffer aBuffer = FloatBuffer.wrap(aVals);
+        FloatBuffer bBuffer = FloatBuffer.wrap(bVals);
+        CLBuffer<Float> memIn1 = context.createFloatBuffer(CLMem.Usage.Input, aVals.length);
+        CLBuffer<Float> memIn2 = context.createFloatBuffer(CLMem.Usage.Input, bBuffer, true); // 'true' : copy provided data
+        CLBuffer<Float> memOut = context.createBuffer(CLMem.Usage.Output, Float.class, num_vectors);
+		long t_dataXfr1_g = System.currentTimeMillis();
+		System.out.println("Device data transfer time for database buffer: " + (t_dataXfr1_g - t1_g) + "ms");
+        // Bind these memory objects to the arguments of the kernel
+        kernel.setArgs(memIn1, memIn2, memOut);
+
+        Pointer<Float> output = null;
+        for(int i = 0;i < 10;i++) {  // execute the kernel number of times for performance test. Return output of final run.
+        	long t_dataXfr2_g = System.currentTimeMillis();
+	        Pointer<Float> aIn = Pointer.pointerToFloats(aVals);
+	        memIn1.write(queue, aIn, false);
+	        long t_dataXfr3_g = System.currentTimeMillis();
+	        kernel.enqueueNDRange(queue, new int[]{numThreads}, new int[]{blockSize});
+	
+	        // Wait for all operations to be performed
+	        queue.finish();
+			long t_execute_g = System.currentTimeMillis();
+			
+	        // Copy the OpenCL-hosted array back to RAM
+	        output = memOut.read(queue);
+	        
+			long t2_g = System.currentTimeMillis();
+	
+			System.out.println("Device data transfer time: " + ((t_dataXfr3_g - t_dataXfr2_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr3_g) + "ms");
+			System.out.println("Device time diff: " + (t2_g-t_dataXfr2_g) + " ms");
+        }
+        
+		memIn1.release();
+		memIn2.release();
+		memOut.release();
+
+		return output;
+    }
+
+    // getting, setting and clearing bitMap array bits based on position(offset)
     private static void set(byte[] BitMap, int offset) 
     { 
            BitMap[offset >> 3]|= 1<<(offset & 7); 
@@ -705,38 +764,62 @@ public class OpenCL4JavaBasicTest {
 			}
 			*/
 	        
-	        String dotProductKernel = "__kernel void dist(__global float4* a_vec, __global float4* b_vec,\r\n" + 
-	        		"      __global float* output, __local float4* partial_dot) {\r\n" + 
-	        		"\r\n" + 
-	        		"   int gid = get_global_id(0);\r\n" + 
-	        		"   int lid = get_local_id(0);\r\n" + 
-	        		"   int group_size = get_local_size(0);\r\n" + 
-	        		"\r\n" + 
-	        		"   float4 diff = a_vec[lid] - b_vec[gid];\r\n" +
-	        		"   partial_dot[lid] = diff*diff;\r\n" + 
-	        		"   barrier(CLK_LOCAL_MEM_FENCE);\r\n" + 
-	        		"\r\n" + 
-	        		"   for(int i = group_size/2; i>0; i >>= 1) {\r\n" + 
-	        		"      if(lid < i) {\r\n" + 
-	        		"         partial_dot[lid] += partial_dot[lid + i];\r\n" + 
-	        		"      }\r\n" + 
-	        		"      barrier(CLK_LOCAL_MEM_FENCE);\r\n" + 
-	        		"   }\r\n" + 
-	        		"\r\n" + 
-	        		"   if(lid == 0) {\r\n" + 
-	        		"      output[get_group_id(0)] = sqrt(dot(partial_dot[0], (float4)(1.0f)));\r\n" + 
-	        		"   }\r\n" + 
-	        		"}";
+	        String distKernels = "__kernel void dist(__constant float4* a_vec, __global float4* b_vec,\n" + 
+	        		"      __global float* output, __local float4* partial_dot) {\n" + 
+	        		"\n" + 
+	        		"   int gid = get_global_id(0);\n" + 
+	        		"   int lid = get_local_id(0);\n" + 
+	        		"   int grId = get_group_id(0);\n" + 
+	        		"   int group_size = get_local_size(0);\n" + 
+	        		"\n" + 
+	        		"   float4 diff = a_vec[lid] - b_vec[gid];\n" +
+	        		"   partial_dot[lid] = diff*diff;\n" + 
+	        		"\n" + 
+	        		"   for(int i = group_size/2; i>0; i >>= 1) {\n" + 
+	        		"      barrier(CLK_LOCAL_MEM_FENCE);\n" + 
+	        		"      if(lid < i) {\n" + 
+	        		"         partial_dot[lid] += partial_dot[lid + i];\n" + 
+	        		"      }\n" + 
+	        		"   }\n" + 
+	        		"\n" + 
+	        		"   if(lid == 0) {\n" + 
+	        		"      output[grId] = sqrt(dot(partial_dot[0], (float4)(1.0f)));\n" + 
+	        		"   }\n" + 
+	        		"}\n" +
+	        		"\n" +
+	        		"__kernel void dist2(__constant float4* a_vec, __global float4* b_vec,\n" + 
+	        		"      __global float* output) {\n" + 
+	        		"\n" + 
+	        		"   int gid = get_global_id(0);\n" + 
+	        		"   int group_size = get_local_size(0);\n" + 
+	        		"   float4 sum = 0.0f;\n" +
+	        		"   float4 c = 0.0f; \n" +
+	        		"   for(int i = 0;i < group_size;i++) {\n" +
+	        		"       // should be vector_size but since group_size == blockSize == vector_size/4 and its float4 datatype, this works...\n" +
+	        		"       float4 diff = a_vec[i] - b_vec[i + gid*group_size]; \n" +
+	        		"       diff = diff*diff;\n" +
+	        		"       //sum += diff;\n" + 
+					"       // Kahan Summation Algorithm aka compensated summation \n" +
+					"       float4 y = diff - c; \n" +
+					"       float4 t = sum + y; \n" +
+					"       c = (t - sum) - y; \n" +
+					"       sum = t; \n" +
+	        		"   }\n" + 
+	        		"\n" + 
+	        		"   output[gid] = sqrt(dot(sum, (float4)(1.0f)));\n" + 
+	        		"}"
+	        		;
 	        
 	        int vector_size = 128, num_vectors = 100*1024;
 	        dataSize = vector_size*num_vectors;
 			blockSize = vector_size/4; // division by 4 to account for use of float4
 			
-			CLProgram programDotProduct = context.createProgram(dotProductKernel);
-			programDotProduct = programDotProduct.defineMacro("LOCAL_WORK_SIZE", Integer.toString(blockSize));
+			CLProgram programDist = context.createProgram(distKernels);
+			programDist = programDist.defineMacro("LOCAL_WORK_SIZE", Integer.toString(blockSize));
             
-			programDotProduct = programDotProduct.build();
-			CLKernel kernelDotProduct = programDotProduct.createKernel("dist");
+			programDist = programDist.build();
+			CLKernel kernelDist = programDist.createKernel("dist");
+			CLKernel kernelDist2 = programDist.createKernel("dist2");
 	        
 			Random dataGenerator = new SecureRandom(new byte[] {0, 1, 2, 3});
 			float[] a_vec = new float[vector_size];
@@ -750,27 +833,45 @@ public class OpenCL4JavaBasicTest {
 	            b_vec[i] = dataGenerator.nextFloat();
 	        }
 			
-			long t_startDotProduct = System.currentTimeMillis();
-			for(int i=0; i < num_vectors; i++) {
-				output_vec[i] = 0.0f;
-				for(int j = 0;j < vector_size;j++) {
-					float diff = a_vec[j] - b_vec[i*vector_size + j];
-					output_vec[i] += diff*diff;
+			for(int cnt = 0;cnt < 10;cnt++) { // performance test for host computation
+				long t_startDist = System.currentTimeMillis();
+				for(int i=0; i < num_vectors; i++) {
+					float sum = 0.0f;
+					float c = 0.0f;
+					for(int j = 0;j < vector_size;j++) {
+						float diff = a_vec[j] - b_vec[i*vector_size + j];
+						diff = diff*diff; // input[i]
+						//sum += diff;
+						// Kahan Summation Algorithm aka compensated summation
+						float y = diff - c;
+						float t = sum + y;
+						c = (t - sum) - y;
+						sum = t;
+					}
+					output_vec[i] = (float) Math.sqrt(sum);
 				}
-				output_vec[i] = (float) Math.sqrt(output_vec[i]);
+				long t_endDist = System.currentTimeMillis();
+				System.out.println("Dist on host took " + (t_endDist - t_startDist) + "ms");
 			}
-			long t_endDotProduct = System.currentTimeMillis();
-			System.out.println("Dist on host took " + (t_endDotProduct - t_startDotProduct) + "ms");
 			
-			Pointer<Float> dot_result = executeOnDeviceDist(kernelDotProduct, context, blockSize, num_vectors, a_vec, b_vec);
+			Pointer<Float> dist_result = executeOnDeviceDist(kernelDist, context, blockSize, num_vectors, a_vec, b_vec);
 			float diff = 0.0f;
 			for(int i = 0;i < num_vectors;i++) {
-				float dot_res = dot_result.get(i);
-				float dot_check = output_vec[i];
-				diff += Math.abs(dot_check - dot_res);
+				float dist_res = dist_result.get(i);
+				float dist_check = output_vec[i];
+				diff += Math.abs(dist_check - dist_res);
 			}
-			System.out.println("Difference in results: " + diff);
-			
+			System.out.println("Difference in results reduce kernel: " + diff);
+
+			Pointer<Float> dist2_result = executeOnDeviceDist2(kernelDist2, context, blockSize, num_vectors, a_vec, b_vec);
+			diff = 0.0f;
+			for(int i = 0;i < num_vectors;i++) {
+				float dist_res = dist2_result.get(i);
+				float dist_check = output_vec[i];
+				diff += Math.abs(dist_check - dist_res);
+			}
+			System.out.println("Difference in results serial reduce: " + diff);
+
         } catch (Exception ex) {
             ex.printStackTrace();
         }
