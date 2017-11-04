@@ -246,6 +246,10 @@ public class OpenCL4JavaBasicTest {
         int numThreads = num_vectors*blockSize;
 		System.out.println("num_vectors: " + num_vectors + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
 
+		float[] a1Vals = new float[aVals.length];
+		for(int i = 0;i < a1Vals.length;i++)
+			a1Vals[i] = aVals[i] + 0.5f;
+		
 		long t1_g = System.currentTimeMillis();
         /// Create direct NIO buffers and fill them with data in the correct byte order
         //Pointer<Float> a = pointerToFloats(aVals).order(context.getKernelsDefaultByteOrder());
@@ -267,7 +271,7 @@ public class OpenCL4JavaBasicTest {
         Pointer<Float> output = null;
         for(int i = 0;i < 10;i++) {  // execute the kernel number of times for performance test. Return output of final run.
         	long t_dataXfr2_g = System.currentTimeMillis();
-	        Pointer<Float> aIn = Pointer.pointerToFloats(aVals);
+	        Pointer<Float> aIn = Pointer.pointerToFloats(i % 2 != 0 ? aVals : a1Vals);
 	        memIn1.write(queue, aIn, false);
 	        long t_dataXfr3_g = System.currentTimeMillis();
 	        kernel.enqueueNDRange(queue, new int[]{numThreads}, new int[]{blockSize});
@@ -297,6 +301,10 @@ public class OpenCL4JavaBasicTest {
         int numThreads = num_vectors;
 		System.out.println("num_vectors: " + num_vectors + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
 
+		float[] a1Vals = new float[aVals.length];
+		for(int i = 0;i < a1Vals.length;i++)
+			a1Vals[i] = aVals[i] + 0.5f;
+
 		long t1_g = System.currentTimeMillis();
         /// Create direct NIO buffers and fill them with data in the correct byte order
         //Pointer<Float> a = pointerToFloats(aVals).order(context.getKernelsDefaultByteOrder());
@@ -317,7 +325,7 @@ public class OpenCL4JavaBasicTest {
         Pointer<Float> output = null;
         for(int i = 0;i < 10;i++) {  // execute the kernel number of times for performance test. Return output of final run.
         	long t_dataXfr2_g = System.currentTimeMillis();
-	        Pointer<Float> aIn = Pointer.pointerToFloats(aVals);
+	        Pointer<Float> aIn = Pointer.pointerToFloats(i % 2 != 0 ? aVals : a1Vals);
 	        memIn1.write(queue, aIn, false);
 	        long t_dataXfr3_g = System.currentTimeMillis();
 	        kernel.enqueueNDRange(queue, new int[]{numThreads}, new int[]{blockSize});
@@ -809,7 +817,8 @@ public class OpenCL4JavaBasicTest {
 	        		"   output[gid] = sqrt(dot(sum, (float4)(1.0f)));\n" + 
 	        		"}"
 	        		;
-	        
+	        // for vector_size == 128, dist2 serial sum kernel performs better
+		// for vector_size == 512, dist reduce parallel kernel performs better
 	        int vector_size = 128, num_vectors = 100*1024;
 	        dataSize = vector_size*num_vectors;
 			blockSize = vector_size/4; // division by 4 to account for use of float4
