@@ -266,7 +266,7 @@ public class OpenCL4JavaBasicTest {
 		System.out.println("Device data transfer time for database buffer: " + (t_dataXfr1_g - t1_g) + "ms");
         // Bind these memory objects to the arguments of the kernel
         kernel.setArgs(memIn1, memIn2, memOut);
-        kernel.setLocalArg(3, blockSize*4*4);
+        kernel.setLocalArg(3, aVals.length*4); // size in bytes to fit one vector length worth of floats
 
         Pointer<Float> output = null;
         for(int i = 0;i < 10;i++) {  // execute the kernel number of times for performance test. Return output of final run.
@@ -606,8 +606,8 @@ public class OpenCL4JavaBasicTest {
 	            System.out.println("Average absolute error = " + diff[0]);
 	            System.out.println("Average relative error = " + diff[1]);
 */			}
-			
-			@SuppressWarnings("unused")
+	
+			/*
 			String structured_src = "\n" +
 			"typedef struct trial_aparapi_AparapiTrial$MyStruct_s{\n" +
 			"float  a;\n" + 
@@ -637,7 +637,7 @@ public class OpenCL4JavaBasicTest {
 			"}\n" +
 			"";
 
-			String filterPredicateKernel_no_divergence = "\n" +
+			String filterPredicateKernel = "\n" +
 					" typedef unsigned char uchar_t; \n" +
 					"__kernel void transform_no_divergence(global TYPE *col, long size, long lk, long hk,   \n" +
 					"         int lkValid, int hkValid, global uchar_t *bitVec, int is_nullable, global const uchar_t *null_bitmap) \n" +
@@ -674,11 +674,8 @@ public class OpenCL4JavaBasicTest {
 					"    // This ensures that we access global memory for this byte only once. \n" +
 					"    bitVec[gloId] = finalByte; \n" +
 					"  //} \n" +
-					"} \n"
-					;
-			
-			String filterPredicateKernel_with_divergence = "\n" +
-					" typedef unsigned char uchar_t; \n" +
+					"} \n" +
+				    "\n" +
 					"__kernel void transform(global TYPE *col, long size, long lk, long hk,   \n" +
 					"         int lkValid, int hkValid, global uchar_t *bitVec, int is_nullable, global const uchar_t *null_bitmap) \n" +
 					"{ \n" +
@@ -705,33 +702,23 @@ public class OpenCL4JavaBasicTest {
 					"} \n"
 			;
 
-			/*
 			int typeSize = 4;
 			blockSize = 256;
 			
-			CLProgram programFilterKernel_no_divergence = context.createProgram(filterPredicateKernel_no_divergence);
-            programFilterKernel_no_divergence = programFilterKernel_no_divergence.defineMacro("LOCAL_WORK_SIZE", Integer.toString(blockSize));
+			CLProgram programFilterKernel = context.createProgram(filterPredicateKernel);
+            programFilterKernel = programFilterKernel.defineMacro("LOCAL_WORK_SIZE", Integer.toString(blockSize));
             if(typeSize == 4)
-            	programFilterKernel_no_divergence = programFilterKernel_no_divergence.defineMacro("TYPE", "int");
+            	programFilterKernel = programFilterKernel.defineMacro("TYPE", "int");
             else if(typeSize == 8)
-            	programFilterKernel_no_divergence = programFilterKernel_no_divergence.defineMacro("TYPE", "long");
+            	programFilterKernel = programFilterKernel.defineMacro("TYPE", "long");
             else
-            	programFilterKernel_no_divergence = programFilterKernel_no_divergence.defineMacro("TYPE", "uchar_t");
+            	programFilterKernel = programFilterKernel.defineMacro("TYPE", "uchar_t");
             
-            programFilterKernel_no_divergence = programFilterKernel_no_divergence.build();
-			CLKernel kernelFilterKernel_no_divergence = programFilterKernel_no_divergence.createKernel("transform_no_divergence");
+            programFilterKernel = programFilterKernel.build();
+            
+			CLKernel kernelFilterKernel_no_divergence = programFilterKernel.createKernel("transform_no_divergence");
 			
-			CLProgram programFilterKernel_with_divergence = context.createProgram(filterPredicateKernel_with_divergence);            
-			programFilterKernel_with_divergence = programFilterKernel_with_divergence.defineMacro("LOCAL_WORK_SIZE", Integer.toString(blockSize));
-			if(typeSize == 4)
-            	programFilterKernel_with_divergence = programFilterKernel_with_divergence.defineMacro("TYPE", "int");
-            else if(typeSize == 8)
-            	programFilterKernel_with_divergence = programFilterKernel_with_divergence.defineMacro("TYPE", "long");
-            else
-            	programFilterKernel_with_divergence = programFilterKernel_with_divergence.defineMacro("TYPE", "uchar_t");
-
-			programFilterKernel_with_divergence = programFilterKernel_with_divergence.build();
-			CLKernel kernelFilterKernel_with_divergence = programFilterKernel_with_divergence.createKernel("transform");
+			CLKernel kernelFilterKernel_with_divergence = programFilterKernel.createKernel("transform");
 
 			dataSize = 16*1024*1024;
 	        int[] col = new int[dataSize];
@@ -772,15 +759,18 @@ public class OpenCL4JavaBasicTest {
 			}
 			*/
 	        
-	        String distKernels = "__kernel void dist(__constant float4* a_vec, __global float4* b_vec,\n" + 
-	        		"      __global float* output, __local float4* partial_dot) {\n" + 
+	        String distKernels = 
+	        		"#define FOUR_ONES ((float4) (1.0f)) \n" +
+	        		"__kernel void dist(__constant REAL_TYPE* a_vec, __global REAL_TYPE* b_vec,\n" + 
+	        		"      __global float* output, __local REAL_TYPE* partial_dot) {\n" + 
 	        		"\n" + 
 	        		"   int gid = get_global_id(0);\n" + 
 	        		"   int lid = get_local_id(0);\n" + 
 	        		"   int grId = get_group_id(0);\n" + 
 	        		"   int group_size = get_local_size(0);\n" + 
+	        		"   REAL_TYPE sum = (REAL_TYPE) (0.0f);\n" + 
 	        		"\n" + 
-	        		"   float4 diff = a_vec[lid] - b_vec[gid];\n" +
+	        		"   REAL_TYPE diff = a_vec[lid] - b_vec[gid];\n" +
 	        		"   partial_dot[lid] = diff*diff;\n" + 
 	        		"\n" + 
 	        		"   for(int i = group_size/2; i>0; i >>= 1) {\n" + 
@@ -791,40 +781,61 @@ public class OpenCL4JavaBasicTest {
 	        		"   }\n" + 
 	        		"\n" + 
 	        		"   if(lid == 0) {\n" + 
-	        		"      output[grId] = sqrt(dot(partial_dot[0], (float4)(1.0f)));\n" + 
+	        		"       sum = partial_dot[0]; \n" +
+	        		"#if REAL_TYPE_SIZE == 4 \n" +
+	        		"      output[grId] = sqrt( dot(sum, FOUR_ONES) ); \n" + 
+	        		"#elif REAL_TYPE_SIZE == 8 \n" +
+	        		"      output[grId] = sqrt( dot(sum.lo, FOUR_ONES) + dot(sum.hi, FOUR_ONES) ); \n" + 
+	        		"#elif REAL_TYPE_SIZE == 16 \n" +
+	        		"      output[grId] = sqrt( dot(sum.lo.lo, FOUR_ONES) + dot(sum.lo.hi, FOUR_ONES) + dot(sum.hi.lo, FOUR_ONES)  + dot(sum.hi.hi, FOUR_ONES) ); \n" +
+	        		"#endif \n" +
 	        		"   }\n" + 
 	        		"}\n" +
 	        		"\n" +
-	        		"__kernel void dist2(__constant float4* a_vec, __global float4* b_vec,\n" + 
+	        		"__kernel void dist2(__constant REAL_TYPE* a_vec, __global REAL_TYPE* b_vec,\n" + 
 	        		"      __global float* output) {\n" + 
 	        		"\n" + 
 	        		"   int gid = get_global_id(0);\n" + 
 	        		"   int group_size = get_local_size(0);\n" + 
-	        		"   float4 sum = 0.0f;\n" +
-	        		"   float4 c = 0.0f; \n" +
+	        		"   REAL_TYPE sum = 0.0f;\n" +
+	        		"   REAL_TYPE c = 0.0f; \n" +
 	        		"   for(int i = 0;i < group_size;i++) {\n" +
-	        		"       // should be vector_size but since group_size == blockSize == vector_size/4 and its float4 datatype, this works...\n" +
-	        		"       float4 diff = a_vec[i] - b_vec[i + gid*group_size]; \n" +
+	        		"       // should be vector_size but since group_size == blockSize == vector_size/n and its float-n datatype, this works...\n" +
+	        		"       REAL_TYPE diff = a_vec[i] - b_vec[i + gid*group_size]; \n" +
 	        		"       diff = diff*diff;\n" +
 	        		"       //sum += diff;\n" + 
 					"       // Kahan Summation Algorithm aka compensated summation \n" +
-					"       float4 y = diff - c; \n" +
-					"       float4 t = sum + y; \n" +
+					"       REAL_TYPE y = diff - c; \n" +
+					"       REAL_TYPE t = sum + y; \n" +
 					"       c = (t - sum) - y; \n" +
 					"       sum = t; \n" +
 	        		"   }\n" + 
 	        		"\n" + 
-	        		"   output[gid] = sqrt(dot(sum, (float4)(1.0f)));\n" + 
+	        		"#if REAL_TYPE_SIZE == 4 \n" +
+	        		"      output[gid] = sqrt( dot(sum, FOUR_ONES) ); \n" + 
+	        		"#elif REAL_TYPE_SIZE == 8 \n" +
+	        		"      output[gid] = sqrt( dot(sum.lo, FOUR_ONES) + dot(sum.hi, FOUR_ONES) ); \n" + 
+	        		"#elif REAL_TYPE_SIZE == 16 \n" +
+	        		"      output[gid] = sqrt( dot(sum.lo.lo, FOUR_ONES) + dot(sum.lo.hi, FOUR_ONES) + dot(sum.hi.lo, FOUR_ONES)  + dot(sum.hi.hi, FOUR_ONES) ); \n" +
+	        		"#endif \n" +
 	        		"}"
 	        		;
 	        // for vector_size == 128, dist2 serial sum kernel performs better
-		// for vector_size == 512, dist reduce parallel kernel performs better
-	        int vector_size = 128, num_vectors = 100*1024;
+		    // for vector_size == 512, dist reduce parallel kernel performs better
+	        int vector_size = 512, num_vectors = 100*1024, deviceVectorData = 8;
 	        dataSize = vector_size*num_vectors;
-			blockSize = vector_size/4; // division by 4 to account for use of float4
+			blockSize = vector_size/deviceVectorData; // division by n to account for use of float-n
 			
 			CLProgram programDist = context.createProgram(distKernels);
-			programDist = programDist.defineMacro("LOCAL_WORK_SIZE", Integer.toString(blockSize));
+            if(deviceVectorData == 4) {
+            	programDist = programDist.defineMacro("REAL_TYPE", "float4").defineMacro("REAL_TYPE_SIZE", "4");
+            }
+            else if(deviceVectorData == 8) {
+            	programDist = programDist.defineMacro("REAL_TYPE", "float8").defineMacro("REAL_TYPE_SIZE", "8");
+            }
+            else if(deviceVectorData == 16) {
+            	programDist = programDist.defineMacro("REAL_TYPE", "float16").defineMacro("REAL_TYPE_SIZE", "16");
+            }
             
 			programDist = programDist.build();
 			CLKernel kernelDist = programDist.createKernel("dist");
