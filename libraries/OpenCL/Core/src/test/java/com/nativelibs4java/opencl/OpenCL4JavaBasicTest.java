@@ -761,6 +761,7 @@ public class OpenCL4JavaBasicTest {
 	        
 	        String distKernels = 
 	        		"#define FOUR_ONES ((float4) (1.0f)) \n" +
+
 	        		"__kernel void dist(__constant REAL_TYPE* a_vec, __global REAL_TYPE* b_vec,\n" + 
 	        		"      __global float* output, __local REAL_TYPE* partial_dot) {\n" + 
 	        		"\n" + 
@@ -768,12 +769,13 @@ public class OpenCL4JavaBasicTest {
 	        		"   int lid = get_local_id(0);\n" + 
 	        		"   int grId = get_group_id(0);\n" + 
 	        		"   int group_size = get_local_size(0);\n" + 
+
 	        		"   REAL_TYPE sum = (REAL_TYPE) (0.0f);\n" + 
-	        		"\n" + 
+
 	        		"   REAL_TYPE diff = a_vec[lid] - b_vec[gid];\n" +
 	        		"   partial_dot[lid] = diff*diff;\n" + 
 	        		"\n" + 
-	        		"   for(int i = group_size/2; i>0; i >>= 1) {\n" + 
+	        		"   for(int i = group_size/2; i > 0; i >>= 1) {\n" + 
 	        		"      barrier(CLK_LOCAL_MEM_FENCE);\n" + 
 	        		"      if(lid < i) {\n" + 
 	        		"         partial_dot[lid] += partial_dot[lid + i];\n" + 
@@ -791,7 +793,57 @@ public class OpenCL4JavaBasicTest {
 	        		"#endif \n" +
 	        		"   }\n" + 
 	        		"}\n" +
-	        		"\n" +
+
+	        		"void warpReduce(volatile __local REAL_TYPE* partial_dot, int lid) { \n" +
+	        		"      partial_dot[lid] += partial_dot[lid + 32]; \n" +
+	        		"      partial_dot[lid] += partial_dot[lid + 16]; \n" +
+	        		"      partial_dot[lid] += partial_dot[lid + 8]; \n" +
+	        		"      partial_dot[lid] += partial_dot[lid + 4]; \n" +
+	        		"      partial_dot[lid] += partial_dot[lid + 1]; \n" +
+	        		"      partial_dot[lid] += partial_dot[lid + 1]; \n" +
+	        		" } \n" +
+	        		
+	        		"__kernel void dist1(__constant REAL_TYPE* a_vec, __global REAL_TYPE* b_vec,\n" + 
+	        		"      __global float* output, __local REAL_TYPE* partial_dot) {\n" + 
+	        		"\n" + 
+	        		"   int gid = get_global_id(0);\n" + 
+	        		"   int lid = get_local_id(0);\n" + 
+	        		"   int grId = get_group_id(0);\n" + 
+	        		"   int group_size = get_local_size(0);\n" + 
+	        		
+	        		"   REAL_TYPE sum = (REAL_TYPE) (0.0f);\n" + 
+
+	        		"   int start = lid + group_size*grId*2; \n" +
+
+	        		"   REAL_TYPE diff1 = a_vec[lid] - b_vec[start];\n" +
+	        		"   REAL_TYPE diff2 = a_vec[lid + group_size] - b_vec[start + group_size];\n" +
+	        		"   partial_dot[lid] = diff1*diff1 + diff2*diff2;\n" + 
+	        		"   barrier(CLK_LOCAL_MEM_FENCE);\n" + 
+
+	        		"   //for(int i = group_size/2; i > 32; i >>= 1) {\n" + 
+	        		"   for(int i = group_size/2; i > 0; i >>= 1) {\n" + 
+	        		"      if(lid < i) {\n" + 
+	        		"         partial_dot[lid] += partial_dot[lid + i];\n" + 
+	        		"         //barrier(CLK_LOCAL_MEM_FENCE);\n" + 
+	        		"      }\n" + 
+	        		"      barrier(CLK_LOCAL_MEM_FENCE);\n" + 
+	        		"   }\n" + 
+	        		"   //if(lid < 32) { \n" +
+	        		"   //   warpReduce(partial_dot, lid); \n" +
+	        		"   //} \n" +
+	        		"\n" + 
+	        		"   if(lid == 0) {\n" + 
+	        		"       sum = partial_dot[0]; \n" +
+	        		"#if REAL_TYPE_SIZE == 4 \n" +
+	        		"      output[grId] = sqrt( dot(sum, FOUR_ONES) ); \n" + 
+	        		"#elif REAL_TYPE_SIZE == 8 \n" +
+	        		"      output[grId] = sqrt( dot(sum.lo, FOUR_ONES) + dot(sum.hi, FOUR_ONES) ); \n" + 
+	        		"#elif REAL_TYPE_SIZE == 16 \n" +
+	        		"      output[grId] = sqrt( dot(sum.lo.lo, FOUR_ONES) + dot(sum.lo.hi, FOUR_ONES) + dot(sum.hi.lo, FOUR_ONES)  + dot(sum.hi.hi, FOUR_ONES) ); \n" +
+	        		"#endif \n" +
+	        		"   }\n" + 
+	        		"}\n" +
+
 	        		"__kernel void dist2(__constant REAL_TYPE* a_vec, __global REAL_TYPE* b_vec,\n" + 
 	        		"      __global float* output) {\n" + 
 	        		"\n" + 
@@ -822,23 +874,16 @@ public class OpenCL4JavaBasicTest {
 	        		;
 	        // for vector_size == 128, dist2 serial sum kernel performs better
 		    // for vector_size == 512, dist reduce parallel kernel performs better
-	        int vector_size = 512, num_vectors = 100*1024, deviceVectorData = 8;
+	        int vector_size = 512, num_vectors = 100*1024, deviceVectorData = 4;
 	        dataSize = vector_size*num_vectors;
 			blockSize = vector_size/deviceVectorData; // division by n to account for use of float-n
 			
-			CLProgram programDist = context.createProgram(distKernels);
-            if(deviceVectorData == 4) {
-            	programDist = programDist.defineMacro("REAL_TYPE", "float4").defineMacro("REAL_TYPE_SIZE", "4");
-            }
-            else if(deviceVectorData == 8) {
-            	programDist = programDist.defineMacro("REAL_TYPE", "float8").defineMacro("REAL_TYPE_SIZE", "8");
-            }
-            else if(deviceVectorData == 16) {
-            	programDist = programDist.defineMacro("REAL_TYPE", "float16").defineMacro("REAL_TYPE_SIZE", "16");
-            }
+			CLProgram programDist = context.createProgram(distKernels)
+					               .defineMacro("REAL_TYPE", "float" + deviceVectorData).defineMacro("REAL_TYPE_SIZE", Integer.toString(deviceVectorData))
+					               .build();
             
-			programDist = programDist.build();
 			CLKernel kernelDist = programDist.createKernel("dist");
+			CLKernel kernelDist1 = programDist.createKernel("dist1");
 			CLKernel kernelDist2 = programDist.createKernel("dist2");
 	        
 			Random dataGenerator = new SecureRandom(new byte[] {0, 1, 2, 3});
@@ -874,6 +919,7 @@ public class OpenCL4JavaBasicTest {
 				System.out.println("Dist on host took " + (t_endDist - t_startDist) + "ms");
 			}
 			
+			// This kernel reduces 1 block of data in one thread block.
 			Pointer<Float> dist_result = executeOnDeviceDist(kernelDist, context, blockSize, num_vectors, a_vec, b_vec);
 			float diff = 0.0f;
 			for(int i = 0;i < num_vectors;i++) {
@@ -881,8 +927,19 @@ public class OpenCL4JavaBasicTest {
 				float dist_check = output_vec[i];
 				diff += Math.abs(dist_check - dist_res);
 			}
-			System.out.println("Difference in results reduce kernel: " + diff);
+			System.out.println("Difference in results reduce kernel v1: " + diff);
 
+			// This kernel reduces 2 blocks of data in one thread block.
+			Pointer<Float> dist1_result = executeOnDeviceDist(kernelDist1, context, blockSize/2, num_vectors, a_vec, b_vec);
+			diff = 0.0f;
+			for(int i = 0;i < num_vectors;i++) {
+				float dist_res = dist1_result.get(i);
+				float dist_check = output_vec[i];
+				diff += Math.abs(dist_check - dist_res);
+			}
+			System.out.println("Difference in results reduce kernel v2: " + diff);
+
+			// This kernel reduces 1 blocks of data in one thread.
 			Pointer<Float> dist2_result = executeOnDeviceDist2(kernelDist2, context, blockSize, num_vectors, a_vec, b_vec);
 			diff = 0.0f;
 			for(int i = 0;i < num_vectors;i++) {
@@ -890,7 +947,7 @@ public class OpenCL4JavaBasicTest {
 				float dist_check = output_vec[i];
 				diff += Math.abs(dist_check - dist_res);
 			}
-			System.out.println("Difference in results serial reduce: " + diff);
+			System.out.println("Difference in results serial reduce kernel: " + diff);
 
         } catch (Exception ex) {
             ex.printStackTrace();
