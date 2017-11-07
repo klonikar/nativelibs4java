@@ -60,7 +60,7 @@ public class OpenCL4JavaBasicTest {
 		int numProcessors = Runtime.getRuntime().availableProcessors();
 		int chunkSize = dataSize/numProcessors;
 		System.out.println("number of processors/cores: " + numProcessors + ", CPU chunkSize: " + chunkSize);
-		long t1 = System.currentTimeMillis();
+		long t1 = System.nanoTime();
 		ExecutorService taskExecutor = Executors.newFixedThreadPool(numProcessors);
 		MyRunnable[] tasks = new MyRunnable[numProcessors];
 		for(int i = 0;i < numProcessors;i++) {
@@ -72,8 +72,8 @@ public class OpenCL4JavaBasicTest {
 		try {
 			taskExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
 		} catch(Exception ex) { }
-		long t2 = System.currentTimeMillis();
-		System.out.println("Host execute time: " + (t2-t1) + " ms");
+		long t2 = System.nanoTime();
+		System.out.println("Host execute time: " + (t2-t1)/1000 + " mus");
 		return tasks;
     }
 
@@ -108,7 +108,7 @@ public class OpenCL4JavaBasicTest {
 		int numProcessors = Runtime.getRuntime().availableProcessors();
 		int chunkSize = dataSize/numProcessors;
 		System.out.println("number of processors/cores: " + numProcessors + ", CPU chunkSize: " + chunkSize);
-		long t1 = System.currentTimeMillis();
+		long t1 = System.nanoTime();
 		ExecutorService taskExecutor = Executors.newFixedThreadPool(numProcessors);
 		MyRunnableDouble[] tasks = new MyRunnableDouble[numProcessors];
 		for(int i = 0;i < numProcessors;i++) {
@@ -120,8 +120,8 @@ public class OpenCL4JavaBasicTest {
 		try {
 			taskExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
 		} catch(Exception ex) { }
-		long t2 = System.currentTimeMillis();
-		System.out.println("Host execute time: " + (t2-t1) + " ms");
+		long t2 = System.nanoTime();
+		System.out.println("Host execute time: " + (t2-t1)/1000 + " mus");
 		return tasks;
     }
 
@@ -169,7 +169,7 @@ public class OpenCL4JavaBasicTest {
         int numThreads = ((dataSize-1)/blockSize + 1)*blockSize;
 		System.out.println("dataSize: " + dataSize + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
 
-        long t1_g = System.currentTimeMillis();
+        long t1_g = System.nanoTime();
         /// Create direct NIO buffers and fill them with data in the correct byte order
         //Pointer<Double> a = pointerToDoubles(aVals).order(context.getKernelsDefaultByteOrder());
         //Pointer<Double> b = pointerToDoubles(bVals).order(context.getKernelsDefaultByteOrder());
@@ -181,7 +181,7 @@ public class OpenCL4JavaBasicTest {
         CLBuffer<Double> memIn1 = context.createDoubleBuffer(CLMem.Usage.Input, aBuffer, true); // 'true' : copy provided data
         CLBuffer<Double> memIn2 = context.createDoubleBuffer(CLMem.Usage.Input, bBuffer, true);
         CLBuffer<Double> memOut = context.createBuffer(CLMem.Usage.Output, Double.class, dataSize);
-		long t_dataXfr1_g = System.currentTimeMillis();
+		long t_dataXfr1_g = System.nanoTime();
         // Bind these memory objects to the arguments of the kernel
         kernel.setArgs(memIn1, memIn2, memOut, dataSize);
 
@@ -189,15 +189,15 @@ public class OpenCL4JavaBasicTest {
 
         // Wait for all operations to be performed
         queue.finish();
-		long t_execute_g = System.currentTimeMillis();
+		long t_execute_g = System.nanoTime();
 		
         // Copy the OpenCL-hosted array back to RAM
         Pointer<Double> output = memOut.read(queue);
-		long t2_g = System.currentTimeMillis();
+		long t2_g = System.nanoTime();
 		memIn1.release();
 		memIn2.release();
-		System.out.println("Device data transfer time: " + ((t_dataXfr1_g - t1_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr1_g) + "ms");
-		System.out.println("Device time diff: " + (t2_g-t1_g) + " ms");
+		System.out.println("Device data transfer time: " + ((t_dataXfr1_g - t1_g) + (t2_g - t_execute_g))/1000 + " mus, execute time: " + (t_execute_g - t_dataXfr1_g)/1000 + " mus");
+		System.out.println("Device time diff: " + (t2_g-t1_g)/1000 + " mus");
 
 		return output;
     }
@@ -208,7 +208,7 @@ public class OpenCL4JavaBasicTest {
         int numThreads = ((dataSize-1)/blockSize + 1)*blockSize;
 		System.out.println("dataSize: " + dataSize + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
 
-		long t1_g = System.currentTimeMillis();
+		long t1_g = System.nanoTime();
         /// Create direct NIO buffers and fill them with data in the correct byte order
         //Pointer<Float> a = pointerToFloats(aVals).order(context.getKernelsDefaultByteOrder());
         //Pointer<Float> b = pointerToFloats(bVals).order(context.getKernelsDefaultByteOrder());
@@ -220,7 +220,7 @@ public class OpenCL4JavaBasicTest {
         CLBuffer<Float> memIn1 = context.createFloatBuffer(CLMem.Usage.Input, aBuffer, true); // 'true' : copy provided data
         CLBuffer<Float> memIn2 = context.createFloatBuffer(CLMem.Usage.Input, bBuffer, true);
         CLBuffer<Float> memOut = context.createBuffer(CLMem.Usage.Output, Float.class, dataSize);
-		long t_dataXfr1_g = System.currentTimeMillis();
+		long t_dataXfr1_g = System.nanoTime();
         // Bind these memory objects to the arguments of the kernel
         kernel.setArgs(memIn1, memIn2, memOut, dataSize);
 
@@ -228,15 +228,15 @@ public class OpenCL4JavaBasicTest {
 
         // Wait for all operations to be performed
         queue.finish();
-		long t_execute_g = System.currentTimeMillis();
+		long t_execute_g = System.nanoTime();
 		
         // Copy the OpenCL-hosted array back to RAM
         Pointer<Float> output = memOut.read(queue);
-		long t2_g = System.currentTimeMillis();
+		long t2_g = System.nanoTime();
 		memIn1.release();
 		memIn2.release();
-		System.out.println("Device data transfer time: " + ((t_dataXfr1_g - t1_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr1_g) + "ms");
-		System.out.println("Device time diff: " + (t2_g-t1_g) + " ms");
+		System.out.println("Device data transfer time: " + ((t_dataXfr1_g - t1_g) + (t2_g - t_execute_g))/1000 + " mus, execute time: " + (t_execute_g - t_dataXfr1_g)/1000 + " mus");
+		System.out.println("Device time diff: " + (t2_g-t1_g)/1000 + " mus");
 
 		return output;
     }
@@ -250,7 +250,7 @@ public class OpenCL4JavaBasicTest {
 		for(int i = 0;i < a1Vals.length;i++)
 			a1Vals[i] = aVals[i] + 0.5f;
 		
-		long t1_g = System.currentTimeMillis();
+		long t1_g = System.nanoTime();
         /// Create direct NIO buffers and fill them with data in the correct byte order
         //Pointer<Float> a = pointerToFloats(aVals).order(context.getKernelsDefaultByteOrder());
         //Pointer<Float> b = pointerToFloats(bVals).order(context.getKernelsDefaultByteOrder());
@@ -262,31 +262,31 @@ public class OpenCL4JavaBasicTest {
         CLBuffer<Float> memIn1 = context.createFloatBuffer(CLMem.Usage.Input, aVals.length);
         CLBuffer<Float> memIn2 = context.createFloatBuffer(CLMem.Usage.Input, bBuffer, true); // 'true' : copy provided data
         CLBuffer<Float> memOut = context.createBuffer(CLMem.Usage.Output, Float.class, num_vectors);
-		long t_dataXfr1_g = System.currentTimeMillis();
-		System.out.println("Device data transfer time for database buffer: " + (t_dataXfr1_g - t1_g) + "ms");
+		long t_dataXfr1_g = System.nanoTime();
+		System.out.println("Device data transfer time for database buffer: " + (t_dataXfr1_g - t1_g)/1000 + " mus");
         // Bind these memory objects to the arguments of the kernel
         kernel.setArgs(memIn1, memIn2, memOut);
         kernel.setLocalArg(3, aVals.length*4); // size in bytes to fit one vector length worth of floats
 
         Pointer<Float> output = null;
         for(int i = 0;i < 10;i++) {  // execute the kernel number of times for performance test. Return output of final run.
-        	long t_dataXfr2_g = System.currentTimeMillis();
+        	long t_dataXfr2_g = System.nanoTime();
 	        Pointer<Float> aIn = Pointer.pointerToFloats(i % 2 != 0 ? aVals : a1Vals);
 	        memIn1.write(queue, aIn, false);
-	        long t_dataXfr3_g = System.currentTimeMillis();
+	        long t_dataXfr3_g = System.nanoTime();
 	        kernel.enqueueNDRange(queue, new int[]{numThreads}, new int[]{blockSize});
 	
 	        // Wait for all operations to be performed
 	        queue.finish();
-			long t_execute_g = System.currentTimeMillis();
+			long t_execute_g = System.nanoTime();
 			
 	        // Copy the OpenCL-hosted array back to RAM
 	        output = memOut.read(queue);
 	        
-			long t2_g = System.currentTimeMillis();
+			long t2_g = System.nanoTime();
 	
-			System.out.println("Device data transfer time: " + ((t_dataXfr3_g - t_dataXfr2_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr3_g) + "ms");
-			System.out.println("Device time diff: " + (t2_g-t_dataXfr2_g) + " ms");
+			System.out.println("Device data transfer time: " + ((t_dataXfr3_g - t_dataXfr2_g) + (t2_g - t_execute_g))/1000 + " mus, execute time: " + (t_execute_g - t_dataXfr3_g)/1000 + " mus");
+			System.out.println("Device time diff: " + (t2_g-t_dataXfr2_g)/1000 + " mus");
         }
         
 		memIn1.release();
@@ -305,7 +305,7 @@ public class OpenCL4JavaBasicTest {
 		for(int i = 0;i < a1Vals.length;i++)
 			a1Vals[i] = aVals[i] + 0.5f;
 
-		long t1_g = System.currentTimeMillis();
+		long t1_g = System.nanoTime();
         /// Create direct NIO buffers and fill them with data in the correct byte order
         //Pointer<Float> a = pointerToFloats(aVals).order(context.getKernelsDefaultByteOrder());
         //Pointer<Float> b = pointerToFloats(bVals).order(context.getKernelsDefaultByteOrder());
@@ -317,30 +317,30 @@ public class OpenCL4JavaBasicTest {
         CLBuffer<Float> memIn1 = context.createFloatBuffer(CLMem.Usage.Input, aVals.length);
         CLBuffer<Float> memIn2 = context.createFloatBuffer(CLMem.Usage.Input, bBuffer, true); // 'true' : copy provided data
         CLBuffer<Float> memOut = context.createBuffer(CLMem.Usage.Output, Float.class, num_vectors);
-		long t_dataXfr1_g = System.currentTimeMillis();
-		System.out.println("Device data transfer time for database buffer: " + (t_dataXfr1_g - t1_g) + "ms");
+		long t_dataXfr1_g = System.nanoTime();
+		System.out.println("Device data transfer time for database buffer: " + (t_dataXfr1_g - t1_g)/1000 + " mus");
         // Bind these memory objects to the arguments of the kernel
         kernel.setArgs(memIn1, memIn2, memOut);
 
         Pointer<Float> output = null;
         for(int i = 0;i < 10;i++) {  // execute the kernel number of times for performance test. Return output of final run.
-        	long t_dataXfr2_g = System.currentTimeMillis();
+        	long t_dataXfr2_g = System.nanoTime();
 	        Pointer<Float> aIn = Pointer.pointerToFloats(i % 2 != 0 ? aVals : a1Vals);
 	        memIn1.write(queue, aIn, false);
-	        long t_dataXfr3_g = System.currentTimeMillis();
+	        long t_dataXfr3_g = System.nanoTime();
 	        kernel.enqueueNDRange(queue, new int[]{numThreads}, new int[]{blockSize});
 	
 	        // Wait for all operations to be performed
 	        queue.finish();
-			long t_execute_g = System.currentTimeMillis();
+			long t_execute_g = System.nanoTime();
 			
 	        // Copy the OpenCL-hosted array back to RAM
 	        output = memOut.read(queue);
 	        
-			long t2_g = System.currentTimeMillis();
+			long t2_g = System.nanoTime();
 	
-			System.out.println("Device data transfer time: " + ((t_dataXfr3_g - t_dataXfr2_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr3_g) + "ms");
-			System.out.println("Device time diff: " + (t2_g-t_dataXfr2_g) + " ms");
+			System.out.println("Device data transfer time: " + ((t_dataXfr3_g - t_dataXfr2_g) + (t2_g - t_execute_g))/1000 + " mus, execute time: " + (t_execute_g - t_dataXfr3_g)/1000 + " mus");
+			System.out.println("Device time diff: " + (t2_g-t_dataXfr2_g)/1000 + " mus");
         }
         
 		memIn1.release();
@@ -418,7 +418,7 @@ public class OpenCL4JavaBasicTest {
         
 		System.out.println("dataSize: " + dataSize + ", bitmap size: " + null_bitmap.length + ", numThreads: " + numThreads + ", blockSize: " + blockSize);
 
-		long t1_g = System.currentTimeMillis();
+		long t1_g = System.nanoTime();
 
         // Allocate OpenCL-hosted memory for inputs and output, 
         // with inputs initialized as copies of the NIO buffers
@@ -427,7 +427,7 @@ public class OpenCL4JavaBasicTest {
         CLBuffer<Integer> memIn1 = context.createIntBuffer(CLMem.Usage.Input, colBuffer, true); // 'true' : copy provided data
         CLBuffer<Byte> memIn2 = context.createByteBuffer(CLMem.Usage.Input, null_bitmapBuffer, true);
         CLBuffer<Byte> memOut = context.createBuffer(CLMem.Usage.Output, Byte.class, null_bitmap.length);
-		long t_dataXfr1_g = System.currentTimeMillis();
+		long t_dataXfr1_g = System.nanoTime();
         // Bind these memory objects to the arguments of the kernel
 		int iLkValid = lkValid ? 1 : 0, iHkValid = hkValid ? 1 : 0, iIs_nullable = is_nullable ? 1 : 0;
         kernel.setArgs(memIn1, dataSize, lk, hk, iLkValid, iHkValid, memOut, iIs_nullable, memIn2);
@@ -436,15 +436,15 @@ public class OpenCL4JavaBasicTest {
 
         // Wait for all operations to be performed
         queue.finish();
-		long t_execute_g = System.currentTimeMillis();
+		long t_execute_g = System.nanoTime();
 		
         // Copy the OpenCL-hosted array back to RAM
         Pointer<Byte> output = memOut.read(queue);
-		long t2_g = System.currentTimeMillis();
+		long t2_g = System.nanoTime();
 		memIn1.release();
 		memIn2.release();
-		System.out.println("Device data transfer time: " + ((t_dataXfr1_g - t1_g) + (t2_g - t_execute_g)) + "ms, execute time: " + (t_execute_g - t_dataXfr1_g) + "ms");
-		System.out.println("Device time diff: " + (t2_g-t1_g) + " ms");
+		System.out.println("Device data transfer time: " + ((t_dataXfr1_g - t1_g) + (t2_g - t_execute_g))/1000 + " mus, execute time: " + (t_execute_g - t_dataXfr1_g)/1000 + " mus");
+		System.out.println("Device time diff: " + (t2_g-t1_g)/1000 + " mus");
 
 		return output;
     }
@@ -582,13 +582,16 @@ public class OpenCL4JavaBasicTest {
 		            aVals[i] = value;
 		            bVals[i] = value;
 		        }
-/*
-				Pointer<Double> output = executeOnDeviceDouble(kernel, context, dataSize, blockSize, aVals, bVals);
+
+				Pointer<Double> output = null;
+				for(int i = 0;i < 10;i++) {
+					output = executeOnDeviceDouble(kernel, context, dataSize, blockSize, aVals, bVals);
+				}
 				MyRunnableDouble[] tasks = executeOnHostDouble(dataSize, aVals, bVals);
 				double[] diff = computeDifferenceDouble(output, tasks,  dataSize);
 	            System.out.println("Average absolute error = " + diff[0]);
 	            System.out.println("Average relative error = " + diff[1]);				
-*/			}
+			}
 			else {
 		        float[] aVals = new float[dataSize];
 		        float[] bVals = new float[dataSize];
@@ -600,12 +603,15 @@ public class OpenCL4JavaBasicTest {
 		            bVals[i] = value;
 		        }
 
-/*				Pointer<Float> output = executeOnDevice(kernel, context, dataSize, blockSize, aVals, bVals);
+				Pointer<Float> output = null;
+				for(int i = 0;i < 10;i++) {
+					output = executeOnDevice(kernel, context, dataSize, blockSize, aVals, bVals);
+				}
 				MyRunnable[] tasks = executeOnHost(dataSize, aVals, bVals);
 				double[] diff = computeDifference(output, tasks,  dataSize);
 	            System.out.println("Average absolute error = " + diff[0]);
 	            System.out.println("Average relative error = " + diff[1]);
-*/			}
+			}
 	
 			/*
 			String structured_src = "\n" +
@@ -899,7 +905,7 @@ public class OpenCL4JavaBasicTest {
 	        }
 			
 			for(int cnt = 0;cnt < 10;cnt++) { // performance test for host computation
-				long t_startDist = System.currentTimeMillis();
+				long t_startDist = System.nanoTime();
 				for(int i=0; i < num_vectors; i++) {
 					float sum = 0.0f;
 					float c = 0.0f;
@@ -915,8 +921,8 @@ public class OpenCL4JavaBasicTest {
 					}
 					output_vec[i] = (float) Math.sqrt(sum);
 				}
-				long t_endDist = System.currentTimeMillis();
-				System.out.println("Dist on host took " + (t_endDist - t_startDist) + "ms");
+				long t_endDist = System.nanoTime();
+				System.out.println("Dist on host took " + (t_endDist - t_startDist)/1000 + " mus");
 			}
 			
 			// This kernel reduces 1 block of data in one thread block.
