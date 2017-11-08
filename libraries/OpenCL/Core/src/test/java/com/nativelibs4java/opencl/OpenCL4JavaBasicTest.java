@@ -765,6 +765,10 @@ public class OpenCL4JavaBasicTest {
 			}
 			*/
 	        
+		// TODO: Add new kernel to pick top N matches with a threshold
+		// while(atomic_cmpxchg(p, 0, v) != 0) {
+                //  p++;
+                // }
 	        String distKernels = 
 	        		"#define FOUR_ONES ((float4) (1.0f)) \n" +
 
